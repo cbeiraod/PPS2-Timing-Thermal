@@ -32,11 +32,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Setup Micromamba is 10x faster than standard Conda and has built-in caching
       - name: Setup Conda Environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: environment.yml
           environment-name: thermal_env
@@ -56,10 +56,25 @@ jobs:
 
       # Upload the output directory as a downloadable artifact
       - name: Upload Simulation Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         # We use always() so it uploads the meshes even if the solver steps fail
         if: always()
         with:
           name: Simple-ETROC-Simulation-Results
           path: output/
           retention-days: 5 # Short retention timeframe to save GitHub storage limits
+
+      # NEW: Upload the plot as an unzipped file so it renders natively in the browser!
+      # (Uncomment this step once your Python script starts generating a plot.png)
+      # - name: Display Plot in Browser (Unzipped)
+      #   uses: actions/upload-artifact@v7
+      #   if: always()
+      #   with:
+      #     name: Simulation-Plots
+      #     path: |
+      #       output/temperature_gradient.png
+      #       output/mesh_quality.png
+      #     path: output/plot.png
+      #     path: output/*.png
+      #     archive: false # This prevents GitHub from zipping the file!
+      #     retention-days: 5
