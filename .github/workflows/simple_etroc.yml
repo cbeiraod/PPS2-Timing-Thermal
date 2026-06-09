@@ -1,0 +1,65 @@
+name: CI - Simple ETROC Simulation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    # ONLY trigger this workflow if these specific files change!
+    paths:
+      - 'simulate_simple_etroc.py'
+      - 'pps2_simulation/__init__.py'
+      - 'pps2_simulation/common.py'
+      - 'pps2_simulation/asic_simple.py'
+      - 'environment.yml'
+      - '.github/workflows/simple_etroc.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'simulate_simple_etroc.py'
+      - 'pps2_simulation/__init__.py'
+      - 'pps2_simulation/common.py'
+      - 'pps2_simulation/asic_simple.py'
+      - 'environment.yml'
+
+jobs:
+  simulate-simple-etroc:
+    runs-on: ubuntu-latest
+
+    # We define the shell at the job level so conda activate works automatically in every step
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup Micromamba is 10x faster than standard Conda and has built-in caching
+      - name: Setup Conda Environment
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: environment.yml
+          environment-name: thermal_env
+          cache-environment: true # This caches the downloaded packages for lightning-fast future CI runs
+
+      - name: Step 1 - Test Geometry & Meshing Only
+        run: |
+          python simulate_simple_etroc.py --mesh-only
+
+      - name: Step 2 - Run Standard Thermal Simulation
+        run: |
+          python simulate_simple_etroc.py --heatsink-temp 23
+
+      - name: Step 3 - Run Simulation with Convection
+        run: |
+          python simulate_simple_etroc.py --heatsink-temp 23 --convection --air-temp 23.0
+
+      # Upload the output directory as a downloadable artifact
+      - name: Upload Simulation Artifacts
+        uses: actions/upload-artifact@v4
+        # We use always() so it uploads the meshes even if the solver steps fail
+        if: always()
+        with:
+          name: Simple-ETROC-Simulation-Results
+          path: output/
+          retention-days: 5 # Short retention timeframe to save GitHub storage limits
