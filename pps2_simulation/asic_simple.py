@@ -1,12 +1,32 @@
 import gmsh
 import math
+from typing import Any
+from .common import draw_slab
 
-def create_silicon_slab(model, width, length, thickness, z_offset=0.0, name="SiSlab", tag_start=1):
-    # 1. Create the box geometry
-    box_tag = model.occ.addBox(-width/2, -length/2, z_offset, width, length, thickness)
+def create_silicon_slab(model: Any, width: float, length: float, thickness: float, z_offset: float = 0.0, name: str = "SiSlab", tag_start: int = 1) -> dict:
+    """
+    Creates a 3D rectangular slab and tags its faces specifically for the simple standalone ASIC simulation.
+
+    Args:
+        model (Any): The active gmsh.model module.
+        width (float): X dimension (e.g., in meters).
+        length (float): Y dimension (e.g., in meters).
+        thickness (float): Z dimension (e.g., in meters).
+        z_offset (float): Z-axis starting position (e.g., in meters).
+        name (str): Prefix for naming physical groups. Defaults to "SiSlab".
+        tag_start (int): Starting integer for physical group IDs (ensures uniqueness).
+
+    Returns:
+        dict: A dictionary mapping topological string names ("occ_tag", "volume",
+              "face_bottom", "face_top", "faces_side") to their assigned integer tags.
+    """
+    # 1. Create the base geometry using the common library
+    box_tag = draw_slab(model, width, length, thickness, z_offset)
+
+    # 2. Synchronize the geometry NOW so we can search its faces
     model.occ.synchronize()
 
-    # 2. Extract faces and their Z-centers
+    # 3. Extract faces and their Z-centers
     surfaces = model.getEntities(dim=2)
     face_data = []
 

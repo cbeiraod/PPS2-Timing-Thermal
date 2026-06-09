@@ -4,7 +4,7 @@ import sys
 import numpy as np
 
 import gmsh
-from pps2_simulation.components import create_silicon_slab
+from pps2_simulation import create_silicon_slab
 
 def run_simulation(args, thickness, thickness_idx):
     """Generates the mesh and solves the heat equation for a given thickness."""
