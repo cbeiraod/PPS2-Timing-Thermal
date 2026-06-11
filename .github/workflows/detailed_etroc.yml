@@ -1,0 +1,101 @@
+name: CI - Detailed ETROC Simulation
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_adaptive_mesh:
+        description: 'Enable Adaptive Meshing (faster)'
+        required: true
+        type: boolean
+        default: true
+  push:
+    branches: [ "main" ]
+    # ONLY trigger this workflow if these specific files change!
+    paths:
+      - 'simulate_detailed_etroc.py'
+      - 'pps2_simulation/__init__.py'
+      - 'pps2_simulation/common.py'
+      - 'pps2_simulation/asic_detailed.py'
+      - 'environment.yml'
+      - '.github/workflows/detailed_etroc.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'simulate_detailed_etroc.py'
+      - 'pps2_simulation/__init__.py'
+      - 'pps2_simulation/common.py'
+      - 'pps2_simulation/asic_detailed.py'
+      - 'environment.yml'
+
+jobs:
+  simulate-simple-etroc:
+    runs-on: ubuntu-latest
+
+    # We define the shell at the job level so conda activate works automatically in every step
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # Setup Micromamba is 10x faster than standard Conda and has built-in caching
+      - name: Setup Conda Environment
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment.yml
+          environment-name: thermal_env
+          cache-environment: true # This caches the downloaded packages for lightning-fast future CI runs
+
+      - name: Step 1 - Test Geometry & Meshing Only
+        run: |
+          # Always use adaptive mesh for push/PR to keep CI fast.
+          # If triggered manually, respect the user's checkbox.
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.use_adaptive_mesh }}" == "false" ]; then
+            python simulate_detailed_etroc.py --mesh-only
+          else
+            python simulate_detailed_etroc.py --mesh-only --adaptive-mesh
+          fi
+
+      - name: Step 2 - Run Standard Thermal Simulation
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.use_adaptive_mesh }}" == "false" ]; then
+            python simulate_detailed_etroc.py --heatsink-temp 23
+          else
+            python simulate_detailed_etroc.py --heatsink-temp 23 --adaptive-mesh
+          fi
+
+      - name: Step 3 - Run Simulation with Convection (Manual Only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.use_adaptive_mesh }}" == "true" ]; then
+            python simulate_detailed_etroc.py --heatsink-temp 23  --convection --air-temp 23.0 --adaptive-mesh
+          else
+            python simulate_detailed_etroc.py --heatsink-temp 23  --convection --air-temp 23.0
+          fi
+
+      # Upload the output directory as a downloadable artifact
+      - name: Upload Simulation Artifacts
+        uses: actions/upload-artifact@v7
+        # We use always() so it uploads the meshes even if the solver steps fail
+        if: always()
+        with:
+          name: Detailed-ETROC-Simulation-Results
+          path: output/
+          retention-days: 5 # Short retention timeframe to save GitHub storage limits
+
+      # NEW: Upload the plot as an unzipped file so it renders natively in the browser!
+      # (Uncomment this step once your Python script starts generating a plot.png)
+      # - name: Display Plot in Browser (Unzipped)
+      #   uses: actions/upload-artifact@v7
+      #   if: always()
+      #   with:
+      #     name: Simulation-Plots
+      #     path: |
+      #       output/temperature_gradient.png
+      #       output/mesh_quality.png
+      #     path: output/plot.png
+      #     path: output/*.png
+      #     archive: false # This prevents GitHub from zipping the file!
+      #     retention-days: 5
