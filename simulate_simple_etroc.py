@@ -152,6 +152,8 @@ def run_simulation(args, thickness, thickness_idx):
     # --- 7. EXPORT TO PARAVIEW ---
     os.makedirs("output", exist_ok=True)
     filename = f"output/ETROC_{thickness*1000:.1f}mm.xdmf"
+    if args.convection:
+        filename = f"output/ETROC_{thickness*1000:.1f}mm_convection.xdmf"
     with io.XDMFFile(domain.comm, filename, "w") as xdmf:
         xdmf.write_mesh(domain)
         xdmf.write_function(uh)
