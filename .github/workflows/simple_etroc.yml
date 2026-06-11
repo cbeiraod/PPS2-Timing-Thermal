@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
-    # ONLY trigger this workflow if these specific files change!
     paths:
       - 'simulate_simple_etroc.py'
       - 'pps2_simulation/__init__.py'
@@ -30,7 +29,7 @@ jobs:
 
     # --- MATRIX SETUP ---
     strategy:
-      fail-fast: false # If the 0.8mm job crashes, keep running the 0.2 and 0.4mm jobs
+      fail-fast: false
       matrix:
         thickness: [0.2, 0.4, 0.8]
 
@@ -100,7 +99,6 @@ jobs:
 
       - name: Run Thermal Simulation
         run: |
-          # Pass the --load-mesh flag so python skips GMSH generation
           if [ "${{ matrix.convection }}" == "true" ]; then
             xvfb-run python simulate_simple_etroc.py --thickness ${{ matrix.thickness }} --heatsink-temp 23 --convection --air-temp 23.0
           else
