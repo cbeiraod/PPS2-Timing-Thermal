@@ -22,10 +22,18 @@ on:
       - 'environment.yml'
 
 jobs:
-  simulate-simple-etroc:
+  # ==========================================
+  # STAGE 1: Generate & Cache Meshes
+  # ==========================================
+  generate-meshes:
     runs-on: ubuntu-latest
 
-    # We define the shell at the job level so conda activate works automatically in every step
+    # --- MATRIX SETUP ---
+    strategy:
+      fail-fast: false # If the 0.8mm job crashes, keep running the 0.2 and 0.4mm jobs
+      matrix:
+        thickness: [0.2, 0.4, 0.8]
+
     defaults:
       run:
         shell: bash -el {0}
@@ -34,43 +42,101 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # Setup Micromamba is 10x faster than standard Conda and has built-in caching
       - name: Setup Conda Environment
         uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: environment.yml
           environment-name: thermal_env
-          cache-environment: true # This caches the downloaded packages for lightning-fast future CI runs
+          cache-environment: true
 
-      - name: Step 1 - Test Geometry & Meshing Only
+      - name: Step 1 - Mesh Generation Only
         run: |
-          python simulate_simple_etroc.py --mesh-only
+          python simulate_simple_etroc.py --thickness ${{ matrix.thickness }} --mesh-only
 
-      - name: Step 2 - Run Standard Thermal Simulation
-        run: |
-          python simulate_simple_etroc.py --heatsink-temp 23
-
-      - name: Step 3 - Run Simulation with Convection
-        run: |
-          python simulate_simple_etroc.py --heatsink-temp 23 --convection --air-temp 23.0
-
-      # Upload the output directory as a downloadable artifact
-      - name: Upload Simulation Artifacts
+      - name: Upload Mesh Artifact (Internal)
         uses: actions/upload-artifact@v7
-        # We use always() so it uploads the meshes even if the solver steps fail
-        if: always()
         with:
-          name: Simple-ETROC-Simulation-Results
+          name: ETROC-Mesh-${{ matrix.thickness }}mm
           path: output/
-          retention-days: 5 # Short retention timeframe to save GitHub storage limits
+          retention-days: 1 # Only kept briefly to pass to Stage 2
 
-      # NEW: Upload the plot as an unzipped file so it renders natively in the browser!
-      - name: Display Plot in Browser (Unzipped)
+  # ==========================================
+  # STAGE 2: Run Solvers (2D Matrix)
+  # ==========================================
+  simulate-thermal:
+    needs: generate-meshes # Wait for Stage 1 to finish successfully
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        thickness: [0.2, 0.4, 0.8]
+        convection: [true, false]
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Conda Environment
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment.yml
+          environment-name: thermal_env
+          cache-environment: true
+
+      - name: Download Mesh Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ASIC-Mesh-${{ matrix.thickness }}mm
+          path: output/ # Restores the mesh exactly where the script expects it
+
+      - name: Run Thermal Simulation
+        run: |
+          # Pass the --load-mesh flag so python skips GMSH generation
+          if [ "${{ matrix.convection }}" == "true" ]; then
+            python simulate_asic.py --thickness ${{ matrix.thickness }} --load-mesh  --heatsink-temp 23 --convection --air-temp 23.0
+          else
+            python simulate_asic.py --thickness ${{ matrix.thickness }} --load-mesh  --heatsink-temp 23
+          fi
+
+      # --- UPLOADS ---
+
+      - name: Upload All Simulation Data
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: Simulation-Plots
+          name: Simple-ETROC-Simulation-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
           path: |
-            output/*.png
-          archive: false # This prevents GitHub from zipping the file!
+            output/
+          retention-days: 5
+
+      - name: Display 1D Profile in Browser
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Plot-1D-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: output/ETROC_*_1D_Profile.png
+          archive: false
+          retention-days: 5
+
+      - name: Display 2D Slice in Browser
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Plot-2D-Slice-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: output/ETROC_*_2D_Slice.png
+          archive: false
+          retention-days: 5
+
+      - name: Display Top View in Browser
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Plot-Top-View-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: output/ETROC_*_Top_Surface.png
+          archive: false
           retention-days: 5
