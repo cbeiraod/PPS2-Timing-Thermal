@@ -28,8 +28,152 @@ on:
       - 'environment.yml'
 
 jobs:
+  # ==========================================
+  # STAGE 1: Generate & Cache Meshes
+  # ==========================================
+  generate-meshes:
+    runs-on: ubuntu-latest
+
+    # --- MATRIX SETUP ---
+    strategy:
+      fail-fast: false # If the 0.8mm job crashes, keep running the 0.2 and 0.4mm jobs
+      matrix:
+        thickness: [0.2, 0.4, 0.8]
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Conda Environment
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment.yml
+          environment-name: thermal_env
+          cache-environment: true
+
+      - name: Step 1 - Mesh Generation Only
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.use_adaptive_mesh }}" == "false" ]; then
+            python simulate_detailed_etroc.py --mesh-only
+          else
+            python simulate_detailed_etroc.py --mesh-only --adaptive-mesh
+          fi
+
+      - name: Upload Mesh Artifact (Internal)
+        uses: actions/upload-artifact@v7
+        with:
+          name: ETROC-Mesh-${{ matrix.thickness }}mm
+          path: output/
+          retention-days: 1 # Only kept briefly to pass to Stage 2
+
+  # ==========================================
+  # STAGE 2: Run Solvers (2D Matrix)
+  # ==========================================
+  simulate-thermal:
+    needs: generate-meshes # Wait for Stage 1 to finish successfully
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        thickness: [0.2, 0.4, 0.8]
+        convection: [true, false]
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Conda Environment
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment.yml
+          environment-name: thermal_env
+          cache-environment: true
+
+      # NEW STEP: Install the virtual screen for PyVista
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Download Mesh Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ETROC-Mesh-${{ matrix.thickness }}mm
+          path: output/ # Restores the mesh exactly where the script expects it
+
+      - name: Run Thermal Simulation
+        run: |
+          # Pass the --load-mesh flag so python skips GMSH generation
+          if [ "${{ matrix.convection }}" == "true" ]; then
+            xvfb-run python simulate_detailed_etroc.py --thickness ${{ matrix.thickness }} --heatsink-temp 23 --convection --air-temp 23.0
+          else
+            xvfb-run python simulate_detailed_etroc.py --thickness ${{ matrix.thickness }} --heatsink-temp 23
+          fi
+
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.use_adaptive_mesh }}" == "false" ]; then
+            python simulate_detailed_etroc.py --heatsink-temp 23
+          else
+            python simulate_detailed_etroc.py --heatsink-temp 23 --adaptive-mesh
+          fi
+
+      # --- UPLOADS ---
+
+      - name: Upload All Simulation Data
+        uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: Detailed-ETROC-Simulation-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: |
+            output/
+          retention-days: 5
+
+      - name: Display 1D Profile in Browser
+        uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: Plot-1D-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: output/ETROC_*_1D_Profile.png
+          archive: false
+          retention-days: 5
+
+      - name: Display 2D Slice in Browser
+        uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: Plot-2D-Slice-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: output/ETROC_*_2D_Slice.png
+          archive: false
+          retention-days: 5
+
+      - name: Display Top View in Browser
+        uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: Plot-Top-View-${{ matrix.thickness }}mm-Conv_${{ matrix.convection }}
+          path: output/ETROC_*_Top_Surface.png
+          archive: false
+          retention-days: 5
+
+
   simulate-simple-etroc:
     runs-on: ubuntu-latest
+
+    # --- MATRIX SETUP ---
+    strategy:
+      fail-fast: false # If the 0.8mm job crashes, keep running the 0.2 and 0.4mm jobs
+      matrix:
+        thickness: [0.2, 0.4, 0.8]
 
     # We define the shell at the job level so conda activate works automatically in every step
     defaults:
@@ -59,6 +203,7 @@ jobs:
           fi
 
       - name: Step 2 - Run Standard Thermal Simulation
+        if: github.event_name == 'workflow_dispatch'
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.use_adaptive_mesh }}" == "false" ]; then
             python simulate_detailed_etroc.py --heatsink-temp 23
