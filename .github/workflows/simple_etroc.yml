@@ -95,16 +95,16 @@ jobs:
       - name: Download Mesh Artifact
         uses: actions/download-artifact@v7
         with:
-          name: ASIC-Mesh-${{ matrix.thickness }}mm
+          name: ETROC-Mesh-${{ matrix.thickness }}mm
           path: output/ # Restores the mesh exactly where the script expects it
 
       - name: Run Thermal Simulation
         run: |
           # Pass the --load-mesh flag so python skips GMSH generation
           if [ "${{ matrix.convection }}" == "true" ]; then
-            xvfb-run python simulate_asic.py --thickness ${{ matrix.thickness }} --heatsink-temp 23 --convection --air-temp 23.0
+            xvfb-run python simulate_simple_etroc.py --thickness ${{ matrix.thickness }} --heatsink-temp 23 --convection --air-temp 23.0
           else
-            xvfb-run python simulate_asic.py --thickness ${{ matrix.thickness }} --heatsink-temp 23
+            xvfb-run python simulate_simple_etroc.py --thickness ${{ matrix.thickness }} --heatsink-temp 23
           fi
 
       # --- UPLOADS ---
