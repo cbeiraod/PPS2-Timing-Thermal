@@ -10,3 +10,5 @@ dependencies:
   - mpi4py
   - numpy
   - pip
+  - matplotlib
+  - pyvista
