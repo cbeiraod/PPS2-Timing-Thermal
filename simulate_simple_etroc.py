@@ -63,7 +63,7 @@ def run_simulation(args, thickness, thickness_idx):
         gmsh.finalize()
         return
 
-    # --- 2. IMPORT TO FENICSX (Lazy Loading) ---
+    # --- 2. IMPORT TO FENICSX ---
     # We import these heavy C++ libraries here instead of the top of the file
     # to prevent massive startup delays, especially when using --mesh-only.
     try:
