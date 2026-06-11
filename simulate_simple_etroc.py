@@ -159,6 +159,98 @@ def run_simulation(args, thickness, thickness_idx):
         xdmf.write_function(uh)
     print(f"Saved results to {filename}")
 
+    # --- 8. PLOTTING ---
+    print("Generating plots...")
+
+    # Plot 1: 1D Temperature Profile through the Z-axis using Matplotlib
+    try:
+        from dolfinx import geometry
+        import matplotlib.pyplot as plt
+
+        # Create 100 points along the Z-axis at the center of the ASIC (X=0, Y=0)
+        num_points = 100
+        points = np.zeros((num_points, 3))
+        points[:, 2] = np.linspace(0, thickness_m, num_points)
+
+        # FEniCSx requires us to find exactly which mesh cell contains each point
+        bb_tree = geometry.bb_tree(domain, domain.topology.dim)
+        try:
+            cell_candidates = geometry.compute_collisions_points(bb_tree, points)
+        except AttributeError:
+            cell_candidates = geometry.compute_collisions(bb_tree, points) # Older API fallback
+
+        colliding_cells = geometry.compute_colliding_cells(domain, cell_candidates, points)
+
+        valid_z = []
+        temps = []
+        for i, point in enumerate(points):
+            if len(colliding_cells.links(i)) > 0:
+                cell = colliding_cells.links(i)[0]
+                val = uh.eval(point, [cell])
+                valid_z.append(point[2] * 1000) # Convert to mm
+                temps.append(val[0])
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(valid_z, temps, label=f"Max: {max_temp:.2f} °C", color='red', linewidth=2)
+        plt.xlabel("Z-axis Height (from Heatsink) [mm]")
+        plt.ylabel("Temperature [°C]")
+        plt.title(f"Temperature Profile (ETROC Thickness: {thickness*1000:.1f} mm)")
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+        plt.ticklabel_format(useOffset=False, axis='y')
+        plt.tight_layout()
+        if args.convection:
+            plt.savefig(f"output/ETROC_{thickness*1000:.1f}mm_convection_1D_Profile.png", dpi=300)
+        else:
+            plt.savefig(f"output/ETROC_{thickness*1000:.1f}mm_1D_Profile.png", dpi=300)
+        plt.close()
+        print(" -> Saved 1D Z-axis profile plot.")
+    except Exception as e:
+        print(f" -> Could not generate 1D plot: {e}")
+
+    # Plot 2 & 3: 2D Slices and Surfaces using PyVista
+    try:
+        import pyvista as pv
+        from dolfinx import plot
+
+        # Extract the mesh and temperature data into a PyVista grid object
+        try:
+            topology, cell_types, geometry_data = plot.vtk_mesh(V)
+        except AttributeError:
+            topology, cell_types, geometry_data = plot.create_vtk_mesh(V) # Older API fallback
+
+        grid = pv.UnstructuredGrid(topology, cell_types, geometry_data)
+        grid.point_data["Temperature"] = uh.x.array.real
+        grid.set_active_scalars("Temperature")
+
+        # Plot 2: 2D Slice through the center (XZ plane at Y=0)
+        plotter_slice = pv.Plotter(off_screen=True)
+        slice_y = grid.slice(normal='y', origin=(0, 0, 0))
+        plotter_slice.add_mesh(slice_y, cmap="inferno", show_edges=False)
+        plotter_slice.view_xz()
+        plotter_slice.add_text("Center Cross-Section (Y=0)", font_size=12)
+        if args.convection:
+            plotter_slice.screenshot(f"output/ETROC_{thickness*1000:.1f}mm_convection_2D_Slice.png")
+        else:
+            plotter_slice.screenshot(f"output/ETROC_{thickness*1000:.1f}mm_2D_Slice.png")
+        plotter_slice.close()
+        print(" -> Saved 2D center slice plot.")
+
+        # Plot 3: Top Surface
+        plotter_top = pv.Plotter(off_screen=True)
+        plotter_top.add_mesh(grid, cmap="inferno", show_edges=False)
+        plotter_top.view_xy() # Top-down view isolates the top surface
+        plotter_top.add_text("Top Surface Temperature", font_size=12)
+        if args.convection:
+            plotter_top.screenshot(f"output/ETROC_{thickness*1000:.1f}mm_convection_Top_Surface.png")
+        else:
+            plotter_top.screenshot(f"output/ETROC_{thickness*1000:.1f}mm_Top_Surface.png")
+        plotter_top.close()
+        print(" -> Saved 2D top surface plot.")
+
+    except Exception as e:
+        print(f" -> Skipped PyVista 2D plotting: {e}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run parametric simple ETROC thermal simulations.")

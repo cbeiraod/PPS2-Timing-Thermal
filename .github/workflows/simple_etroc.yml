@@ -65,16 +65,12 @@ jobs:
           retention-days: 5 # Short retention timeframe to save GitHub storage limits
 
       # NEW: Upload the plot as an unzipped file so it renders natively in the browser!
-      # (Uncomment this step once your Python script starts generating a plot.png)
-      # - name: Display Plot in Browser (Unzipped)
-      #   uses: actions/upload-artifact@v7
-      #   if: always()
-      #   with:
-      #     name: Simulation-Plots
-      #     path: |
-      #       output/temperature_gradient.png
-      #       output/mesh_quality.png
-      #     path: output/plot.png
-      #     path: output/*.png
-      #     archive: false # This prevents GitHub from zipping the file!
-      #     retention-days: 5
+      - name: Display Plot in Browser (Unzipped)
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Simulation-Plots
+          path: |
+            output/*.png
+          archive: false # This prevents GitHub from zipping the file!
+          retention-days: 5
