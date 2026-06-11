@@ -1,7 +1,9 @@
 import argparse
 import os
 import sys
+import json
 import numpy as np
+from pathlib import Path
 
 import gmsh
 from pps2_simulation import create_silicon_slab
@@ -9,6 +11,13 @@ from pps2_simulation import create_silicon_slab
 def run_simulation(args, thickness, thickness_idx):
     """Generates the mesh and solves the heat equation for a given thickness."""
     print(f"\n--- Running simulation for ASIC thickness: {thickness*1000:.2f} mm ---")
+
+    os.makedirs("output", exist_ok=True)
+    tags_filepath = f"output/ETROC_{thickness*1000:.1f}mm_tags.json"
+    mesh_filename = f"output/ETROC_{thickness*1000:.1f}mm.msh"
+    viewable_mesh_filename = f"output/ETROC_{thickness*1000:.1f}mm.vtk"
+
+    mesh_path = Path(mesh_filename)
 
     # --- 1. MESHING (GMSH) ---
     gmsh.initialize()
@@ -19,20 +28,37 @@ def run_simulation(args, thickness, thickness_idx):
     length_m = args.length * 1e-3
     thickness_m = thickness * 1e-3
 
-    tags = create_silicon_slab(gmsh.model, width_m, length_m, thickness_m, name="ETROC", tag_start=1)
+    if not mesh_path.is_file() or args.regen_mesh:
+        print("Generating new geometry and mesh...")
+        tags = create_silicon_slab(gmsh.model, width_m, length_m, thickness_m, name="ETROC", tag_start=1)
 
-    # Force GMSH to use a mesh size small enough to capture the thin Z-axis
-    # We set the max size to double the thickness to ensure at least a few layers of elements
-    gmsh.option.setNumber("Mesh.MeshSizeMax", thickness_m )#* 2)
+        # Force GMSH to use a mesh size small enough to capture the thin Z-axis
+        # We set the max size to double the thickness to ensure at least a few layers of elements
+        gmsh.option.setNumber("Mesh.MeshSizeMax", thickness_m )#* 2)
 
-    # Generate 3D Mesh
-    gmsh.model.mesh.generate(3)
+        # Generate 3D Mesh
+        gmsh.model.mesh.generate(3)
 
-    if args.mesh_only:
-        os.makedirs("output", exist_ok=True)
-        mesh_filename = f"output/ETROC_{thickness*1000:.1f}mm.vtk"
         gmsh.write(mesh_filename)
         print(f"Mesh generation successful. Saved mesh to {mesh_filename}.")
+
+        # Dynamically save the tags dictionary
+        with open(tags_filepath, "w") as f:
+            json.dump(tags, f, indent=4)
+    else:
+        # LOAD CACHED MESH
+        print(f"Loading cached mesh from {mesh_filename}...")
+        gmsh.merge(mesh_filename)
+
+        # Dynamically load the exact tags used when this mesh was generated
+        with open(tags_filepath, "r") as f:
+            tags = json.load(f)
+
+    if args.save_viewable_mesh:
+        gmsh.write(viewable_mesh_filename)
+        print(f"Viewable mesh generation successful. Saved mesh to {viewable_mesh_filename}.")
+
+    if args.mesh_only:
         print("Stopping before solve due to --mesh-only flag.")
         gmsh.finalize()
         return
@@ -269,6 +295,8 @@ if __name__ == "__main__":
 
     # Utilities
     parser.add_argument("--mesh-only", action="store_true", help="Generate meshes only, skip solver (useful for CI or testing)")
+    parser.add_argument("--save-viewable-mesh", action="store_true", help="Save the generated mesh as vtk format for viewing in addtion to the msh format")
+    parser.add_argument("--regen-mesh", action="store_true", help="Re-Generate the mesh, even if a previous one already exists")
 
     args = parser.parse_args()
 
