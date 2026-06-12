@@ -58,9 +58,9 @@ jobs:
       - name: Step 1 - Mesh Generation Only
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.use_adaptive_mesh }}" == "false" ]; then
-            python simulate_detailed_etroc.py --mesh-only
+            python simulate_detailed_etroc.py --thickness ${{ matrix.thickness }} --mesh-only
           else
-            python simulate_detailed_etroc.py --mesh-only --adaptive-mesh
+            python simulate_detailed_etroc.py --thickness ${{ matrix.thickness }} --mesh-only --adaptive-mesh
           fi
 
       - name: Upload Mesh Artifact (Internal)
